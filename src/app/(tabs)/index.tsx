@@ -1,70 +1,141 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { Button, FlatList, StyleSheet, TouchableOpacity } from "react-native";
+import { ThemedText } from "@/components/atoms/ThemedText";
+import { ThemedView } from "@/components/atoms/ThemedView";
+import ThemedSafeAreaView from "@/components/atoms/ThemedSafeAreaView";
+import { useThemeColor } from "@/hooks/useThemeColor";
+import * as FileSystem from "expo-file-system";
+import { useCallback, useEffect, useState } from "react";
+import { IDocument } from "@/types/document";
+import { ensureFolderExists, fetchFilesInFolder } from "@/hooks/useFileController";
+import FileItem from "@/components/molecules/FileItem";
+import RecentFileItem from "@/components/molecules/RecentFileItem";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "expo-router";
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/atoms/ThemedText';
-import { ThemedView } from '@/components/atoms/ThemedView';
+const RECENT_PATH = `${FileSystem.documentDirectory}recent/`;
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({ ios: 'cmd + d', android: 'cmd + m' })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+	const borderColor = useThemeColor({}, "border");
+	const [files, setFiles] = useState<IDocument[]>([]);
+	const [listColumns, setListColumns] = useState<number>(3);
+	const [containerWidth, setContainerWidth] = useState<number>(0);
+
+	useFocusEffect(
+		useCallback(() => {
+			const init = async () => {
+				try {
+					await ensureFolderExists(RECENT_PATH);
+					const recentFilesJson = await AsyncStorage.getItem("@recent_documents");
+
+					if (recentFilesJson) {
+						const recentFiles = JSON.parse(recentFilesJson) as IDocument[];
+
+						setFiles(recentFiles);
+					}
+
+					// await fetchFilesInFolder(RECENT_PATH, setFiles);
+				} catch (error) {
+					console.error("Failed to initialize HomeScreen:", error);
+				}
+			};
+
+			init();
+		}, [])
+	);
+
+	const fetchFilesInFolder = async () => {
+		try {
+			await ensureFolderExists(RECENT_PATH);
+			const recentFilesJson = await AsyncStorage.getItem("@recent_documents");
+
+			if (recentFilesJson) {
+				const recentFiles = JSON.parse(recentFilesJson) as IDocument[];
+
+				setFiles(recentFiles);
+			}
+
+			// await fetchFilesInFolder(RECENT_PATH, setFiles);
+		} catch (error) {
+			console.error("Failed to initialize HomeScreen:", error);
+		}
+	};
+
+	const renderItem = ({ uri, name, extention, lastModified, info }: IDocument) => {
+		const margin = 10;
+		const gap = 16;
+		const itemWidth = (containerWidth - gap * (listColumns - 1) - margin * 2) / listColumns;
+
+		return (
+			<>
+				<TouchableOpacity>
+					<RecentFileItem
+						name={name}
+						extention={extention}
+						fileInfo={info}
+						lastModified={lastModified}
+						width={itemWidth}
+					/>
+				</TouchableOpacity>
+			</>
+		);
+	};
+
+	const initialize = async () => {
+		try {
+			await FileSystem.deleteAsync(RECENT_PATH, { idempotent: true });
+			await AsyncStorage.removeItem("@recent_documents");
+			setFiles([]);
+		} catch (error) {
+			console.error("Failed to clear cache:", error);
+		}
+	};
+
+	return (
+		<ThemedSafeAreaView type="full-screen">
+			<ThemedView style={{ ...styles.titleContainer, borderBottomColor: borderColor }}>
+				<ThemedText type="subtitle">최근 읽은 문서</ThemedText>
+			</ThemedView>
+			<FlatList
+				data={files}
+				keyExtractor={(item) => item.uri + item.lastModified}
+				renderItem={({ item }) => renderItem(item)}
+				columnWrapperStyle={{ marginBottom: 16, gap: 16 }}
+				numColumns={listColumns}
+				contentContainerStyle={{ padding: 10 }}
+				onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+			/>
+			<ThemedView style={{ flexDirection: "row" }}>
+				<Button
+					title="최신화"
+					onPress={fetchFilesInFolder}
+				/>
+				<Button
+					title="Initialize"
+					onPress={initialize}
+				/>
+			</ThemedView>
+		</ThemedSafeAreaView>
+	);
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+	titleContainer: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "center",
+		paddingVertical: 16,
+		borderBottomColor: "#E5E5E5",
+		borderBottomWidth: 1,
+	},
+	stepContainer: {
+		gap: 8,
+		marginBottom: 8,
+	},
+	reactLogo: {
+		height: 178,
+		width: 290,
+		bottom: 0,
+		left: 0,
+		position: "absolute",
+	},
 });
